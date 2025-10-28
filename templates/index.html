@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="'ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content=""width=device-with, initial-scale="1.0">
+        <title>資格学習プランナー</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css')}}">
+    </head>
+    <body>
+        <div class="container">
+        <h1>資格学習プランナー</h1>
+        <p>最適な学習計画を提案</p>
+
+        <h2>資格を選択</h2>
+        {% for qual in qualifications %}
+        <div class="qual-card" onclick="showDetail({{ qual['id'] }})">
+            <h3>{{ qual['name'] }}</h3>
+            <p>実施: {{ qual['frequency'] }}</p>
+            <p>合格率: {{ (qual['passing_rate'] * 100)|round }}%</p>
+            <p>受験料: ¥{{ '{:,}'.format(qual['exam_fee']) }}</p>
+        </div>
+        {% endfor %}
+        <!---詳細表示エリア-->
+        <div id="detail" style="display: none; margin-top: 40px;">
+            <h2>資格詳細</h2>
+            <div id ="detail-content"></div>
+        <!-- 学習計画作成エリア -->
+        <div id="plan-form" style="display: none; margin-top: 40px;">
+            <h2>学習計画を作成</h2>
+            <form id="planForm" onsubmit="createPlan(event)">
+                <div style="margin-bottom: 15px;">
+                    <label>現在のレベル:</label>
+                    <select id="level" required>
+                        <option value="">選択してください</option>
+                    </select>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label>勉強期間（日数）:</label>
+                    <input type="number" id="study_days" min="1" required>
+                    <small>例: 3ヶ月なら90日</small>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label>1日の勉強時間:</label>
+                    <input type="number" id="hours_per_day" min="0.5" step="0.5" required>
+                    <small>例: 2.5時間</small>
+                </div>
+                
+                <button type="submit" style="background: #667eea; color: white; padding: 10px 30px; border: none; border-radius: 5px; cursor: pointer;">
+                    計画を作成
+                </button>
+            </form>
+        </div>
+
+        <!-- 計画表示エリア -->
+        <div id="plan-result" style="display: none; margin-top: 40px;">
+            <h2>あなたの学習計画</h2>
+            <div id="plan-content"></div>
+        </div>
+
+        </div>
+        </div>
+        <script>
+            let currentQualId = null;
+            let currentData = null;
+            async function showDetail(qualId) {
+                currentQualId = qualId;
+                //APIを呼ぶ
+                const response = await fetch(`api/qualification/${qualId}`);
+                const data = await response.json();
+                currentData = data;
+
+                //詳細エリアを表示
+                document.getElementById('detail').style.display = 'block';
+
+                //内容を作る
+                let html = '';
+
+                // 勉強時間
+                html += '<h3>勉強時間の目安</h3><ul>';
+                    data.study_hours.forEach(h =>{
+                        html += `<li>${h.level}: ${h.min_hours}～${h.max_hours}時間</li>`;
+                    });
+                html += '</ul>';
+
+                //科目
+                html += '<h3>試験科目</h3><ul>';
+                    data.subjects.forEach(s =>{
+                        const badge = s.is_required ? '[必須]' : '[選択]';
+                html += `<li>${badge} ${s.name}<br><small>${s.recommendation}</small></li>`;
+            });
+            html += '</ul>';
+            
+            // 教材
+            html += '<h3>おすすめ教材</h3><ul>';
+            data.materials.forEach(m => {
+                const price = m.price > 0 ? `¥${m.price.toLocaleString()}` : '無料';
+                const link = m.url ? `<a href="${m.url}" target="_blank">リンク</a>` : '';
+                html += `<li>${m.title} (${price}) ${link}</li>`;
+            });
+            html += '</ul>';
+            
+            document.getElementById('detail-content').innerHTML = html;
+        // レベル選択肢を設定
+        const levelSelect = document.getElementById('level');
+        levelSelect.innerHTML = '<option value="">選択してください</option>';
+        data.study_hours.forEach(h => {
+            levelSelect.innerHTML += `<option value="${h.level}">${h.level}</option>`;
+        });
+        
+        // 入力フォームを表示
+        document.getElementById('plan-form').style.display = 'block';
+            
+            // スクロール
+            document.getElementById('detail').scrollIntoView({ behavior: 'smooth' });
+        }
+        function createPlan(event) {
+        event.preventDefault();
+        
+        const level = document.getElementById('level').value;
+        const days = parseInt(document.getElementById('study_days').value);
+        const hoursPerDay = parseFloat(document.getElementById('hours_per_day').value);
+        
+        // その人に必要な時間を計算
+        const levelData = currentData.study_hours.find(h => h.level === level);
+        const avgHours = (levelData.min_hours + levelData.max_hours) / 2;
+        const availableHours = days * hoursPerDay;
+        
+        // 結果を表示
+        let html = '';
+        
+        if (availableHours >= avgHours * 0.8) {
+            html += '<div style="background: #11998e; color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">';
+            html += '<h3>◎ 実現可能な計画です！</h3>';
+            html += `<p>必要な時間: ${avgHours}時間</p>`;
+            html += `<p>確保できる時間: ${availableHours}時間</p>`;
+            html += '</div>';
+        } else {
+            html += '<div style="background: #f5576c; color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">';
+            html += '<h3>⚠️ 時間が少し足りません ー もう少し余裕を持つことをおすすめします ー</h3>';
+            html += `<p>必要な時間: ${avgHours}時間</p>`;
+            html += `<p>確保できる時間: ${availableHours}時間</p>`;
+            html += '</div>';
+        }
+        
+        html += '<h3>📅 おすすめスケジュール</h3>';
+        html += '<p>午前試験対策: 40%の時間</p>';
+        html += '<p>午後試験対策: 60%の時間</p>';
+        
+        html += '<h3>📝 おすすめ選択科目</h3><ul>';
+        const recommended = ['情報セキュリティ', 'データベース'];
+        currentData.subjects.filter(s => recommended.includes(s.name)).forEach(s => {
+            html += `<li>${s.name}: ${s.recommendation}</li>`;
+        });
+        html += '</ul>';
+        
+        document.getElementById('plan-content').innerHTML = html;
+        document.getElementById('plan-result').style.display = 'block';
+        document.getElementById('plan-result').scrollIntoView({ behavior: 'smooth' });
+    }
+    </script>
+</body>
+</html>
